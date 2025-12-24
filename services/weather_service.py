@@ -1,6 +1,25 @@
+import time
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
+
+
+def _get_json_with_retries(url: str, *, timeout: int = 15, attempts: int = 3, backoff: float = 1.5, headers=None):
+    """GET with retries + backoff; raises last exception on failure."""
+    last_err = None
+    for attempt in range(attempts):
+        try:
+            resp = requests.get(url, timeout=timeout, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as err:
+            last_err = err
+            if attempt == attempts - 1:
+                raise
+            time.sleep(backoff ** attempt)
+    if last_err:
+        raise last_err
+    raise RuntimeError("Unexpected error fetching remote data")
 
 def fetch_weather_data(lat: float, lon: float):
     hourly_params = "temperature_2m,relative_humidity_2m,pressure_msl,precipitation,wind_speed_10m"
@@ -15,9 +34,8 @@ def fetch_weather_data(lat: float, lon: float):
         f"&hourly={hourly_params}"
         "&timezone=UTC"
     )
-    archive_res = requests.get(archive_url, timeout=15)
-    archive_res.raise_for_status()
-    archive_data = archive_res.json().get("hourly", {})
+    archive_json = _get_json_with_retries(archive_url, timeout=15)
+    archive_data = archive_json.get("hourly", {}) if archive_json else {}
     df_archive = pd.DataFrame(archive_data) if archive_data else pd.DataFrame()
 
     # Forecast futuro (siguiente 7 días; luego se recorta a 24h en el modelo)
@@ -26,9 +44,8 @@ def fetch_weather_data(lat: float, lon: float):
         f"&hourly={hourly_params}"
         "&timezone=UTC"
     )
-    forecast_res = requests.get(forecast_url, timeout=15)
-    forecast_res.raise_for_status()
-    forecast_data = forecast_res.json().get("hourly", {})
+    forecast_json = _get_json_with_retries(forecast_url, timeout=15)
+    forecast_data = forecast_json.get("hourly", {}) if forecast_json else {}
     df_forecast = pd.DataFrame(forecast_data) if forecast_data else pd.DataFrame()
 
     df_all = pd.concat([df_archive, df_forecast], ignore_index=True)

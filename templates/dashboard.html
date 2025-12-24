@@ -210,18 +210,20 @@
 
         try {
             const res = await fetch(url);
-            const data = await res.json();
-
-            if (!res.ok || data.error) {
-                errorBox.textContent = data.error || "Error al obtener datos del servidor.";
-                errorBox.classList.remove('hidden');
-                return;
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (parseErr) {
+                throw new Error("No se pudo interpretar la respuesta del servidor.");
             }
 
-            if (!data.predictions || !data.actual || !data.timestamps) {
-                errorBox.textContent = "Datos incompletos. Intente nuevamente.";
-                errorBox.classList.remove('hidden');
-                return;
+            if (!res.ok) {
+                const msg = (data && (data.detail || data.error)) || `Error del servidor (${res.status})`;
+                throw new Error(msg);
+            }
+
+            if (!data || !data.predictions || !data.actual || !data.timestamps) {
+                throw new Error("Datos incompletos. Intente nuevamente.");
             }
 
             // Mostrar MAE de test si existe
@@ -369,7 +371,7 @@
                 document.getElementById('chart-past-container').classList.add('hidden');
             }
         } catch (err) {
-            errorBox.textContent = "Error de conexion con el servidor.";
+            errorBox.textContent = err?.message || "Error de conexion con el servidor.";
             errorBox.classList.remove('hidden');
             console.error("Error:", err);
         }

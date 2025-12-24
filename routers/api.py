@@ -33,14 +33,31 @@ def _set_cached_prediction(lat: float, lon: float, target: str, value: dict):
     predict_cache[key] = {"value": value, "expires_at": time.time() + CACHE_TTL_SECONDS}
 
 
+def _get_json_with_retries(url: str, *, timeout: int = 10, attempts: int = 3, backoff: float = 1.5, headers=None):
+    """GET with retries + backoff; raises last exception on failure."""
+    last_err = None
+    for attempt in range(attempts):
+        try:
+            resp = requests.get(url, timeout=timeout, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as err:
+            last_err = err
+            if attempt == attempts - 1:
+                raise
+            time.sleep(backoff ** attempt)
+    if last_err:
+        raise last_err
+    raise RuntimeError("Unexpected error fetching remote data")
+
+
 def get_cached_coords(city_norm: str):
     if city_norm in geo_cache:
         return geo_cache[city_norm]
 
     geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city_norm}&count=5&language=es"
-    resp = requests.get(geo_url, timeout=10)
-    resp.raise_for_status()
-    data = resp.json().get("results", [])
+    geo_json = _get_json_with_retries(geo_url, timeout=10)
+    data = geo_json.get("results", []) if geo_json else []
 
     if not data:
         return None
@@ -93,24 +110,21 @@ async def predict(
                 lon = -lon
 
             geo_url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}"
-            resp = requests.get(
+            resp_json = _get_json_with_retries(
                 geo_url,
                 headers={"User-Agent": "AI-EcoPredict"},
-                timeout=10
+                timeout=10,
             )
 
-            if resp.ok:
-                address = resp.json().get("address", {})
-                city = (
-                    address.get("city")
-                    or address.get("town")
-                    or address.get("village")
-                    or address.get("municipality")
-                    or address.get("county")
-                    or f"Lat: {lat:.2f}, Lon: {lon:.2f}"
-                )
-            else:
-                city = f"Lat: {lat:.2f}, Lon: {lon:.2f}"
+            address = resp_json.get("address", {}) if resp_json else {}
+            city = (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+                or address.get("county")
+                or f"Lat: {lat:.2f}, Lon: {lon:.2f}"
+            )
 
         except Exception as e:
             print(f"?? Error en reverse geocoding: {e}")
