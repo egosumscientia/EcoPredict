@@ -11,16 +11,14 @@
     <!-- FORM -->
     <form id="predictForm" class="flex flex-wrap justify-center gap-3 mb-4">
         <input id="city" type="text" placeholder="City (optional)"
-            class="px-3 py-1 rounded bg-gray-800 text-white w-48 text-sm"
-            aria-label="Enter city name">
+            class="px-3 py-1 rounded bg-gray-800 text-white w-48 text-sm" aria-label="Enter city name">
 
         <input id="lat" type="number" step="any" placeholder="Latitude"
             class="px-3 py-1 rounded bg-gray-800 text-white w-32 text-sm">
         <input id="lon" type="number" step="any" placeholder="Longitude"
             class="px-3 py-1 rounded bg-gray-800 text-white w-32 text-sm">
 
-        <select id="variable" class="px-3 py-1 rounded bg-gray-800 text-white text-sm"
-                aria-label="Select variable">
+        <select id="variable" class="px-3 py-1 rounded bg-gray-800 text-white text-sm" aria-label="Select variable">
             <option value="temperature_2m">Temperature (C)</option>
             <option value="relative_humidity_2m">Humidity (%)</option>
             <option value="pressure_msl">Pressure (hPa)</option>
@@ -28,25 +26,25 @@
             <option value="wind_speed_10m">Wind Speed (m/s)</option>
         </select>
 
-        <button type="submit"
-                class="bg-cyan-500 hover:bg-cyan-600 px-4 py-1 rounded text-sm">
+        <button type="submit" class="bg-cyan-500 hover:bg-cyan-600 px-4 py-1 rounded text-sm">
             Predict
         </button>
     </form>
 
     <!-- Error visible -->
     <div id="errorBox"
-         class="hidden text-red-400 bg-red-950/30 border border-red-500/40 rounded-lg px-4 py-2 mb-6 text-sm text-center"></div>
+        class="hidden text-red-400 bg-red-950/30 border border-red-500/40 rounded-lg px-4 py-2 mb-6 text-sm text-center">
+    </div>
 
     <!-- Test MAE -->
     <div id="metricBox"
-         class="hidden text-emerald-300 bg-emerald-900/20 border border-emerald-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
+        class="hidden text-emerald-300 bg-emerald-900/20 border border-emerald-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
         Test MAE: <span id="maeValue">-</span>
     </div>
 
     <!-- Rain metrics -->
     <div id="rainMetricBox"
-         class="hidden text-cyan-300 bg-cyan-900/20 border border-cyan-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
+        class="hidden text-cyan-300 bg-cyan-900/20 border border-cyan-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
         Rain P/R/F1 (th <span id="rainTh">-</span> mm):
         <span id="rainPr">-</span> /
         <span id="rainRe">-</span> /
@@ -71,211 +69,162 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Evitar mezcla de ciudad y coordenadas
-const cityInput = document.getElementById('city');
-const latInput = document.getElementById('lat');
-const lonInput = document.getElementById('lon');
-const metricBox = document.getElementById('metricBox');
-const maeValue = document.getElementById('maeValue');
-const rainMetricBox = document.getElementById('rainMetricBox');
-const rainTh = document.getElementById('rainTh');
-const rainPr = document.getElementById('rainPr');
-const rainRe = document.getElementById('rainRe');
-const rainF1 = document.getElementById('rainF1');
+    // Evitar mezcla de ciudad y coordenadas
+    const cityInput = document.getElementById('city');
+    const latInput = document.getElementById('lat');
+    const lonInput = document.getElementById('lon');
+    const metricBox = document.getElementById('metricBox');
+    const maeValue = document.getElementById('maeValue');
+    const rainMetricBox = document.getElementById('rainMetricBox');
+    const rainTh = document.getElementById('rainTh');
+    const rainPr = document.getElementById('rainPr');
+    const rainRe = document.getElementById('rainRe');
+    const rainF1 = document.getElementById('rainF1');
 
-function formatLocalTime(utcStr) {
-    if (!utcStr) return '';
-    // backend sends "YYYY-MM-DD HH:MM:SS"
-    // Append "Z" or "+00:00" to ensure it's treated as UTC
-    // Replacing space with T makes it ISO 8601 compliant
-    const isoStr = utcStr.replace(' ', 'T') + 'Z';
-    const date = new Date(isoStr);
-    
-    // Format: "YYYY-MM-DD HH:MM" (local)
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
+    function formatLocalTime(utcStr) {
+        if (!utcStr) return '';
+        // backend sends "YYYY-MM-DD HH:MM:SS"
+        // Append "Z" or "+00:00" to ensure it's treated as UTC
+        // Replacing space with T makes it ISO 8601 compliant
+        const isoStr = utcStr.replace(' ', 'T') + 'Z';
+        const date = new Date(isoStr);
 
-function clearCoordsIfCity() {
-    if (cityInput.value.trim() !== '') {
-        latInput.value = '';
-        lonInput.value = '';
-        latInput.disabled = true;
-        lonInput.disabled = true;
-    } else {
-        latInput.disabled = false;
-        lonInput.disabled = false;
-    }
-}
+        // Format: "YYYY-MM-DD HH:MM" (local)
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
 
-function clearCityIfCoords() {
-    if (latInput.value.trim() !== '' || lonInput.value.trim() !== '') {
-        cityInput.value = '';
-        cityInput.disabled = true;
-    } else {
-        cityInput.disabled = false;
-    }
-}
-
-cityInput.addEventListener('input', clearCoordsIfCity);
-latInput.addEventListener('input', clearCityIfCoords);
-lonInput.addEventListener('input', clearCityIfCoords);
-
-// Logica de prediccion
-document.getElementById('predictForm').addEventListener('submit', async e => {
-    e.preventDefault();
-
-    const city = cityInput.value.trim();
-    const lat = latInput.value.trim();
-    const lon = lonInput.value.trim();
-    const variable = document.getElementById('variable').value;
-    const errorBox = document.getElementById('errorBox');
-
-    // Limpiar errores previos
-    errorBox.classList.add('hidden');
-    errorBox.textContent = '';
-    metricBox.classList.add('hidden');
-    rainMetricBox.classList.add('hidden');
-
-    const params = new URLSearchParams({ target: variable });
-    if (city) params.set('city', city);
-    else if (lat && lon) {
-        params.set('lat', lat);
-        params.set('lon', lon);
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
     }
 
-    const url = `/api/predict?${params.toString()}`;
-    console.log("Request:", url);
+    function clearCoordsIfCity() {
+        if (cityInput.value.trim() !== '') {
+            latInput.value = '';
+            lonInput.value = '';
+            latInput.disabled = true;
+            lonInput.disabled = true;
+        } else {
+            latInput.disabled = false;
+            lonInput.disabled = false;
+        }
+    }
 
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
+    function clearCityIfCoords() {
+        if (latInput.value.trim() !== '' || lonInput.value.trim() !== '') {
+            cityInput.value = '';
+            cityInput.disabled = true;
+        } else {
+            cityInput.disabled = false;
+        }
+    }
 
-        if (!res.ok || data.error) {
-            errorBox.textContent = data.error || "Error al obtener datos del servidor.";
-            errorBox.classList.remove('hidden');
-            return;
+    cityInput.addEventListener('input', clearCoordsIfCity);
+    latInput.addEventListener('input', clearCityIfCoords);
+    lonInput.addEventListener('input', clearCityIfCoords);
+
+    // Logica de prediccion
+    document.getElementById('predictForm').addEventListener('submit', async e => {
+        e.preventDefault();
+
+        const city = cityInput.value.trim();
+        const lat = latInput.value.trim();
+        const lon = lonInput.value.trim();
+        const variable = document.getElementById('variable').value;
+        const errorBox = document.getElementById('errorBox');
+
+        // Limpiar errores previos
+        errorBox.classList.add('hidden');
+        errorBox.textContent = '';
+        metricBox.classList.add('hidden');
+        rainMetricBox.classList.add('hidden');
+
+        const params = new URLSearchParams({ target: variable });
+        if (city) params.set('city', city);
+        else if (lat && lon) {
+            params.set('lat', lat);
+            params.set('lon', lon);
         }
 
-        if (!data.predictions || !data.actual || !data.timestamps) {
-            errorBox.textContent = "Datos incompletos. Intente nuevamente.";
-            errorBox.classList.remove('hidden');
-            return;
-        }
+        const url = `/api/predict?${params.toString()}`;
+        console.log("Request:", url);
 
-        // Mostrar MAE de test si existe
-        if (typeof data.mae === 'number') {
-            maeValue.textContent = data.mae.toFixed(3);
-            metricBox.classList.remove('hidden');
-        }
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
 
-        // Mostrar metricas de lluvia si existen
-        if (data.rain_metrics) {
-            const { threshold, precision, recall, f1 } = data.rain_metrics;
-            rainTh.textContent = (threshold ?? 0).toFixed(3);
-            rainPr.textContent = (precision ?? 0).toFixed(3);
-            rainRe.textContent = (recall ?? 0).toFixed(3);
-            rainF1.textContent = (f1 ?? 0).toFixed(3);
-            rainMetricBox.classList.remove('hidden');
-        }
-
-        const pastLabelsRaw = data.observed_timestamps || [];
-        const pastData = data.observed_past || [];
-        const futureLabelsRaw = data.timestamps || [];
-        
-        // Convert to local time
-        const futureLabels = futureLabelsRaw.map(formatLocalTime);
-        const pastLabels = pastLabelsRaw.map(formatLocalTime);
-        
-        const futureActual = data.actual || [];
-        const preds = data.predictions || [];
-        const forecastBaselineSeries = futureActual;
-        const predSeries = preds;
-
-        // Destruye graficos anteriores
-        if (window.chartFuture && typeof window.chartFuture.destroy === 'function') {
-            window.chartFuture.destroy();
-        }
-        if (window.chartPast && typeof window.chartPast.destroy === 'function') {
-            window.chartPast.destroy();
-        }
-
-        // Future chart: prediction vs forecast baseline
-        const ctxFuture = document.getElementById('chartFuture');
-        window.chartFuture = new Chart(ctxFuture, {
-            type: 'line',
-            data: {
-                labels: futureLabels,
-                datasets: [
-                    {
-                        label: `Predicted ${variable} (${data.city})`,
-                        data: predSeries,
-                        borderColor: '#06b6d4',
-                        backgroundColor: 'rgba(6,182,212,0.25)',
-                        tension: 0.3,
-                    },
-                    {
-                        label: `Forecast baseline ${variable} (${data.city})`,
-                        data: forecastBaselineSeries,
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16,185,129,0.25)',
-                        borderDash: [6,2],
-                        tension: 0.3,
-                        spanGaps: false,
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: { color: '#e5e5e5', boxWidth: 15 }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            color: '#aaa',
-                            maxRotation: 45,
-                            minRotation: 45,
-                            maxTicksLimit: 8,
-                            autoSkip: true,
-                        },
-                        title: { display: true, text: 'Time (Local)', color: '#aaa' }
-                    },
-                    y: {
-                        ticks: { color: '#aaa' },
-                        title: { display: true, text: variable, color: '#aaa' }
-                    }
-                }
+            if (!res.ok || data.error) {
+                errorBox.textContent = data.error || "Error al obtener datos del servidor.";
+                errorBox.classList.remove('hidden');
+                return;
             }
-        });
 
-        // Past observed chart
-        if (pastLabels.length && pastData.length) {
-            document.getElementById('chart-past-container').classList.remove('hidden');
-            const ctxPast = document.getElementById('chartPast');
-            window.chartPast = new Chart(ctxPast, {
+            if (!data.predictions || !data.actual || !data.timestamps) {
+                errorBox.textContent = "Datos incompletos. Intente nuevamente.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            // Mostrar MAE de test si existe
+            if (typeof data.mae === 'number') {
+                maeValue.textContent = data.mae.toFixed(3);
+                metricBox.classList.remove('hidden');
+            }
+
+            // Mostrar metricas de lluvia si existen
+            if (data.rain_metrics) {
+                const { threshold, precision, recall, f1 } = data.rain_metrics;
+                rainTh.textContent = (threshold ?? 0).toFixed(3);
+                rainPr.textContent = (precision ?? 0).toFixed(3);
+                rainRe.textContent = (recall ?? 0).toFixed(3);
+                rainF1.textContent = (f1 ?? 0).toFixed(3);
+                rainMetricBox.classList.remove('hidden');
+            }
+
+            const pastLabelsRaw = data.observed_timestamps || [];
+            const pastData = data.observed_past || [];
+            const futureLabelsRaw = data.timestamps || [];
+
+            // Convert to local time
+            const futureLabels = futureLabelsRaw.map(formatLocalTime);
+            const pastLabels = pastLabelsRaw.map(formatLocalTime);
+
+            const futureActual = data.actual || [];
+            const preds = data.predictions || [];
+            const forecastBaselineSeries = futureActual;
+            const predSeries = preds;
+
+            // Destruye graficos anteriores
+            if (window.chartFuture && typeof window.chartFuture.destroy === 'function') {
+                window.chartFuture.destroy();
+            }
+            if (window.chartPast && typeof window.chartPast.destroy === 'function') {
+                window.chartPast.destroy();
+            }
+
+            // Future chart: prediction vs forecast baseline
+            const ctxFuture = document.getElementById('chartFuture');
+            window.chartFuture = new Chart(ctxFuture, {
                 type: 'line',
                 data: {
-                    labels: pastLabels,
+                    labels: futureLabels,
                     datasets: [
                         {
-                            label: `Observed ${variable} (${data.city})`,
-                            data: pastData,
-                            borderColor: '#fbbf24',
-                            backgroundColor: 'rgba(251,191,36,0.25)',
+                            label: `Predicted ${variable} (${data.city})`,
+                            data: predSeries,
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6,182,212,0.25)',
                             tension: 0.3,
+                        },
+                        {
+                            label: `Forecast baseline ${variable} (${data.city})`,
+                            data: forecastBaselineSeries,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16,185,129,0.25)',
+                            borderDash: [6, 2],
+                            tension: 0.3,
+                            spanGaps: false,
                         }
                     ]
                 },
@@ -300,7 +249,7 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
                                 maxTicksLimit: 8,
                                 autoSkip: true,
                             },
-                            title: { display: true, text: 'Time (UTC)', color: '#aaa' }
+                            title: { display: true, text: 'Time (Local)', color: '#aaa' }
                         },
                         y: {
                             ticks: { color: '#aaa' },
@@ -309,14 +258,71 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
                     }
                 }
             });
-        } else {
-            document.getElementById('chart-past-container').classList.add('hidden');
+
+            // Past observed chart
+            if (pastLabels.length && pastData.length) {
+                document.getElementById('chart-past-container').classList.remove('hidden');
+                const ctxPast = document.getElementById('chartPast');
+                window.chartPast = new Chart(ctxPast, {
+                    type: 'line',
+                    data: {
+                        labels: pastLabels,
+                        datasets: [
+                            {
+                                label: `Observed ${variable} (${data.city})`,
+                                data: pastData,
+                                borderColor: '#fbbf24',
+                                backgroundColor: 'rgba(251,191,36,0.25)',
+                                tension: 0.3,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#e5e5e5', boxWidth: 15 }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: '#aaa',
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    maxTicksLimit: 8,
+                                    autoSkip: true,
+                                },
+                                title: { display: true, text: 'Time (UTC)', color: '#aaa' }
+                            },
+                            y: {
+                                ticks: { color: '#aaa' },
+                                title: { display: true, text: variable, color: '#aaa' }
+                            }
+                        }
+                    }
+                });
+            } else {
+                document.getElementById('chart-past-container').classList.add('hidden');
+            }
+        } catch (err) {
+            errorBox.textContent = "Error de conexion con el servidor.";
+            errorBox.classList.remove('hidden');
+            console.error("Error:", err);
         }
-    } catch (err) {
-        errorBox.textContent = "Error de conexion con el servidor.";
-        errorBox.classList.remove('hidden');
-        console.error("Error:", err);
-    }
-});
+    });
+
+    // Auto-load default city (Bogota)
+    window.addEventListener('DOMContentLoaded', () => {
+        cityInput.value = "Bogotá";
+        clearCoordsIfCity();
+        // Trigger submit
+        document.getElementById('predictForm').dispatchEvent(new Event('submit'));
+    });
 </script>
 {% endblock %}
