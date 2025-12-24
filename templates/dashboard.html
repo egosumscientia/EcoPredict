@@ -18,6 +18,11 @@
         <input id="lon" type="number" step="any" placeholder="Longitude"
             class="px-3 py-1 rounded bg-gray-800 text-white w-32 text-sm">
 
+        <button type="button" id="btnLocation" title="Usar mi ubicación"
+            class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white text-sm">
+            📍
+        </button>
+
         <select id="variable" class="px-3 py-1 rounded bg-gray-800 text-white text-sm" aria-label="Select variable">
             <option value="temperature_2m">Temperature (C)</option>
             <option value="relative_humidity_2m">Humidity (%)</option>
@@ -28,6 +33,11 @@
 
         <button type="submit" class="bg-cyan-500 hover:bg-cyan-600 px-4 py-1 rounded text-sm">
             Predict
+        </button>
+
+        <button type="button" id="btnClear" title="Limpiar formulario"
+            class="bg-gray-600 hover:bg-gray-500 px-3 py-1 rounded text-white text-sm">
+            ↺
         </button>
     </form>
 
@@ -123,6 +133,51 @@
     cityInput.addEventListener('input', clearCoordsIfCity);
     latInput.addEventListener('input', clearCityIfCoords);
     lonInput.addEventListener('input', clearCityIfCoords);
+
+    // Clear logic
+    document.getElementById('btnClear').addEventListener('click', () => {
+        cityInput.value = '';
+        latInput.value = '';
+        lonInput.value = '';
+
+        cityInput.disabled = false;
+        latInput.disabled = false;
+        lonInput.disabled = false;
+    });
+
+    // Geolocation logic
+    document.getElementById('btnLocation').addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            alert("Tu navegador no soporta geolocalización.");
+            return;
+        }
+
+        // Visual feedback
+        const btn = document.getElementById('btnLocation');
+        const originalText = btn.textContent;
+        btn.textContent = "⏳";
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                latInput.value = position.coords.latitude.toFixed(4);
+                lonInput.value = position.coords.longitude.toFixed(4);
+
+                // Clear city to ensure logic uses coords
+                cityInput.value = "";
+                clearCityIfCoords();
+
+                btn.textContent = originalText;
+
+                // Auto submit
+                document.getElementById('predictForm').dispatchEvent(new Event('submit'));
+            },
+            (error) => {
+                console.error(error);
+                alert("No se pudo obtener tu ubicación. Verifica los permisos.");
+                btn.textContent = originalText;
+            }
+        );
+    });
 
     // Logica de prediccion
     document.getElementById('predictForm').addEventListener('submit', async e => {
