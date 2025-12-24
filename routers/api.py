@@ -112,7 +112,7 @@ async def predict(
             geo_url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}"
             resp_json = _get_json_with_retries(
                 geo_url,
-                headers={"User-Agent": "AI-EcoPredict"},
+                headers={"User-Agent": "EcoPredict"},
                 timeout=10,
             )
 
