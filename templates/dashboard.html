@@ -55,13 +55,13 @@
 
     <!-- CHARTS -->
     <div class="flex justify-center mt-6">
-        <h3 class="text-gray-300 text-sm">Próximas 24h: Predicción vs Forecast (UTC)</h3>
+        <h3 class="text-gray-300 text-sm">Próximas 24h: Predicción vs Forecast (Hora Local)</h3>
     </div>
     <div id="chart-container" class="flex justify-center mt-2">
         <canvas id="chartFuture" class="max-w-full" style="width: 90%; height: 360px;"></canvas>
     </div>
     <div class="flex justify-center mt-6">
-        <h3 class="text-gray-300 text-sm">Últimas 24h observadas (UTC)</h3>
+        <h3 class="text-gray-300 text-sm">Últimas 24h observadas (Hora Local)</h3>
     </div>
     <div id="chart-past-container" class="flex justify-center mt-2">
         <canvas id="chartPast" class="max-w-full" style="width: 90%; height: 260px;"></canvas>
@@ -82,6 +82,24 @@ const rainTh = document.getElementById('rainTh');
 const rainPr = document.getElementById('rainPr');
 const rainRe = document.getElementById('rainRe');
 const rainF1 = document.getElementById('rainF1');
+
+function formatLocalTime(utcStr) {
+    if (!utcStr) return '';
+    // backend sends "YYYY-MM-DD HH:MM:SS"
+    // Append "Z" or "+00:00" to ensure it's treated as UTC
+    // Replacing space with T makes it ISO 8601 compliant
+    const isoStr = utcStr.replace(' ', 'T') + 'Z';
+    const date = new Date(isoStr);
+    
+    // Format: "YYYY-MM-DD HH:MM" (local)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
 
 function clearCoordsIfCity() {
     if (cityInput.value.trim() !== '') {
@@ -166,10 +184,14 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
             rainMetricBox.classList.remove('hidden');
         }
 
-        const pastLabels = data.observed_timestamps || [];
+        const pastLabelsRaw = data.observed_timestamps || [];
         const pastData = data.observed_past || [];
         const futureLabelsRaw = data.timestamps || [];
-        const futureLabels = futureLabelsRaw.map(ts => `${ts} UTC`);
+        
+        // Convert to local time
+        const futureLabels = futureLabelsRaw.map(formatLocalTime);
+        const pastLabels = pastLabelsRaw.map(formatLocalTime);
+        
         const futureActual = data.actual || [];
         const preds = data.predictions || [];
         const forecastBaselineSeries = futureActual;
@@ -229,7 +251,7 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
                             maxTicksLimit: 8,
                             autoSkip: true,
                         },
-                        title: { display: true, text: 'Time (UTC)', color: '#aaa' }
+                        title: { display: true, text: 'Time (Local)', color: '#aaa' }
                     },
                     y: {
                         ticks: { color: '#aaa' },
@@ -246,7 +268,7 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
             window.chartPast = new Chart(ctxPast, {
                 type: 'line',
                 data: {
-                    labels: pastLabels.map(ts => `${ts} UTC`),
+                    labels: pastLabels,
                     datasets: [
                         {
                             label: `Observed ${variable} (${data.city})`,
