@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="text-center max-w-5xl mx-auto">
+    <h2 class="text-2xl text-cyan-400 font-semibold mb-4">
+        Weather Prediction Dashboard
+    </h2>
+    <p class="text-gray-400 mb-6">
+        Select a location and a variable to visualize predicted vs actual data.
+    </p>
+
+    <!-- FORM -->
+    <form id="predictForm" class="flex flex-wrap justify-center gap-3 mb-4">
+        <input id="city" type="text" placeholder="City (optional)" 
+            class="px-3 py-1 rounded bg-gray-800 text-white w-48 text-sm"
+            aria-label="Enter city name">
+
+        <input id="lat" type="number" step="any" placeholder="Latitude"
+            class="px-3 py-1 rounded bg-gray-800 text-white w-32 text-sm">
+        <input id="lon" type="number" step="any" placeholder="Longitude"
+            class="px-3 py-1 rounded bg-gray-800 text-white w-32 text-sm">
+
+        <select id="variable" class="px-3 py-1 rounded bg-gray-800 text-white text-sm"
+                aria-label="Select variable">
+            <option value="temperature_2m">Temperature (°C)</option>
+            <option value="relative_humidity_2m">Humidity (%)</option>
+            <option value="pressure_msl">Pressure (hPa)</option>
+            <option value="precipitation">Precipitation (mm)</option>
+            <option value="wind_speed_10m">Wind Speed (m/s)</option>
+        </select>
+
+        <button type="submit"
+                class="bg-cyan-500 hover:bg-cyan-600 px-4 py-1 rounded text-sm">
+            Predict
+        </button>
+    </form>
+
+    <!-- 🧱 Error visible -->
+    <div id="errorBox"
+         class="hidden text-red-400 bg-red-950/30 border border-red-500/40 rounded-lg px-4 py-2 mb-6 text-sm text-center"></div>
+
+    <!-- CHART -->
+    <div id="chart-container" class="flex justify-center mt-6">
+        <canvas id="chart" class="max-w-full" style="width: 90%; height: 360px;"></canvas>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// === ⚙️ Evitar mezcla de ciudad y coordenadas ===
+const cityInput = document.getElementById('city');
+const latInput = document.getElementById('lat');
+const lonInput = document.getElementById('lon');
+
+function clearCoordsIfCity() {
+    if (cityInput.value.trim() !== '') {
+        latInput.value = '';
+        lonInput.value = '';
+        latInput.disabled = true;
+        lonInput.disabled = true;
+    } else {
+        latInput.disabled = false;
+        lonInput.disabled = false;
+    }
+}
+
+function clearCityIfCoords() {
+    if (latInput.value.trim() !== '' || lonInput.value.trim() !== '') {
+        cityInput.value = '';
+        cityInput.disabled = true;
+    } else {
+        cityInput.disabled = false;
+    }
+}
+
+cityInput.addEventListener('input', clearCoordsIfCity);
+latInput.addEventListener('input', clearCityIfCoords);
+lonInput.addEventListener('input', clearCityIfCoords);
+
+// === 📊 Lógica de predicción ===
+document.getElementById('predictForm').addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const city = cityInput.value.trim();
+    const lat = latInput.value.trim();
+    const lon = lonInput.value.trim();
+    const variable = document.getElementById('variable').value;
+    const errorBox = document.getElementById('errorBox');
+
+    // Limpiar errores previos
+    errorBox.classList.add('hidden');
+    errorBox.textContent = '';
+
+    const params = new URLSearchParams({ target: variable });
+    if (city) params.set('city', city);
+    else if (lat && lon) {
+        params.set('lat', lat);
+        params.set('lon', lon);
+    }
+
+    const url = `/api/predict?${params.toString()}`;
+    console.log("🔍 Request:", url);
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        // --- 🚨 Mostrar errores visualmente ---
+        if (!res.ok || data.error) {
+            errorBox.textContent = data.error || "Error al obtener datos del servidor.";
+            errorBox.classList.remove('hidden');
+            return;
+        }
+
+        if (!data.predictions || !data.actual || !data.timestamps) {
+            errorBox.textContent = "Datos incompletos. Intente nuevamente.";
+            errorBox.classList.remove('hidden');
+            return;
+        }
+
+        // Destruye gráfico anterior
+        if (window.chartInstance) window.chartInstance.destroy();
+
+        const ctx = document.getElementById('chart');
+        window.chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.timestamps.slice(-data.predictions.length),
+                datasets: [
+                    {
+                        label: `Predicted ${variable} (${data.city})`,
+                        data: data.predictions,
+                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(6,182,212,0.25)',
+                        tension: 0.3,
+                    },
+                    {
+                        label: `Actual ${variable} (${data.city})`,
+                        data: data.actual.slice(-data.predictions.length),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16,185,129,0.25)',
+                        borderDash: [5,5],
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#e5e5e5', boxWidth: 15 }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#aaa', maxRotation: 45, minRotation: 45 },
+                        title: { display: true, text: 'Time (UTC)', color: '#aaa' }
+                    },
+                    y: {
+                        ticks: { color: '#aaa' },
+                        title: { display: true, text: variable, color: '#aaa' }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        errorBox.textContent = "Error de conexión con el servidor.";
+        errorBox.classList.remove('hidden');
+        console.error("❌ Error:", err);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+# ==========================================
+# AI–EcoPredict .gitignore (FastAPI + Tailwind)
+# Windows 11 + Python (.venv) + Node
+# ==========================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+
+# ---- FastAPI / Uvicorn ----
+*.log
+*.pid
+instance/
+*.db-journal
+
+# ---- Jupyter (por si pruebas notebooks) ----
+.ipynb_checkpoints/
+
+# ---- Tailwind / Node ----
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Tailwind build artifacts
+.postcss-cache/
+static/css/*.min.css.map
+dist/
+build/
+public/
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- OS-specific ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- Environment variables ----
+.env
+.env.*
+
+# ---- Reports / Temporary Data ----
+reports/
+tmp/
+cache/
+*.tmp
+
+# ---- Models / Artifacts ----
+*.joblib
+*.pkl
+*.h5
+geo_cache.json
+
+# ---- Tests / Coverage ----
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+
+# ---- Build / Distribution ----
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
