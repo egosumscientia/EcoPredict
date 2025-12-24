@@ -134,15 +134,18 @@
     latInput.addEventListener('input', clearCityIfCoords);
     lonInput.addEventListener('input', clearCityIfCoords);
 
-    // Clear logic
+    // Clear logic -> Reset to Default (Bogota)
     document.getElementById('btnClear').addEventListener('click', () => {
-        cityInput.value = '';
+        cityInput.value = 'Bogotá';
         latInput.value = '';
         lonInput.value = '';
 
         cityInput.disabled = false;
-        latInput.disabled = false;
-        lonInput.disabled = false;
+        latInput.disabled = true; // Disabled because city is present
+        lonInput.disabled = true;
+
+        // Trigger prediction
+        document.getElementById('predictForm').dispatchEvent(new Event('submit'));
     });
 
     // Geolocation logic
