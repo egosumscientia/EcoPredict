@@ -6,6 +6,9 @@ Dashboard y API ligera con FastAPI que obtiene datos horarios de Open-Meteo, ent
 - Backend: FastAPI, Uvicorn, Jinja2.
 - ML: scikit-learn, pandas, numpy.
 - Frontend: HTML con Tailwind CSS precompilado y Chart.js (CDN).
+- Cache en memoria para `/api/predict` por lat/lon/variable (5 minutos) para reducir llamadas a Open-Meteo.
+- Histórico + forecast: se consulta Open-Meteo con archivo (`archive-api`) para obtener las últimas 24h observadas/reanálisis y el forecast para el horizonte futuro.
+- El UI muestra las próximas horas (UTC) como horizonte de predicción y grafica predicción vs valores del forecast disponibles.
 
 ## Estructura
 - `main.py` monta estáticos/plantillas y registra routers.
@@ -41,22 +44,37 @@ Respuesta (JSON):
 {
   "city": "Bogotá",
   "target": "temperature_2m",
-  "predictions": [ ... últimas 24 ... ],
-  "actual": [ ... serie completa ... ],
-  "timestamps": [ ... ],
-  "mae": 0.42
+  "predictions": [ ... últimas de test ... ],
+  "actual": [ ... reales de test ... ],
+  "timestamps": [ ... de test ... ],
+  "mae": 0.42,  // MAE calculado sobre la ventana de test
+  "rain_metrics": {
+    "threshold": 0.05,
+    "precision": 0.8,
+    "recall": 0.75,
+    "f1": 0.77
+  } // solo para target precipitation
 }
 ```
 Errores comunes: ciudad inexistente, sin ciudad ni coordenadas, o target inválido.
 
+`POST /api/update` — reentrena rápido usando coordenadas (JSON) y target opcional:
+```json
+{ "lat": 4.61, "lon": -74.08, "target": "temperature_2m" }
+```
+Responde `{"status": "ok", ...}` o `{"status": "error", "error": "..."}`. El botón “Update Model” en la barra superior lo usa con Bogotá por defecto.
+
 ## Dashboard
 - Ruta `/`: formulario para ciudad o coordenadas, selector de variable y gráfico de líneas comparando predicciones vs valores reales.
 - Usa Chart.js desde CDN y el CSS ya compilado en `static/css/styles.css`.
-- El botón “Update Model” en la barra superior apunta a `/api/update`, pero ese endpoint aún no existe (sin efecto).
+- El botón “Update Model” en la barra superior dispara `/api/update` para refrescar el modelo demo.
+- Muestra el MAE de test (ventana deslizante) debajo del formulario.
+- Para precipitación muestra métricas de lluvia (precisión/recall/F1) con umbral configurado.
+- Se grafican dos paneles: arriba predicción vs forecast baseline para las próximas 24h; abajo las últimas 24h observadas (archivo).
 
 ## Notas sobre datos/modelo
 - Los datos se descargan al vuelo de Open-Meteo; no hay caché ni almacenamiento persistente.
-- El modelo se entrena con los mismos datos usados para predecir (modo demo) y mezcla LR + RandomForest; no hay split train/test ni serialización.
+- El modelo mezcla LR (escalada con StandardScaler) + RandomForest con rezagos del target (dependen de la variable, p.ej. humedad/presión usan 1,2,3,6; viento 1,2). Para precipitación aplica log1p al target, recorta predicciones a no-negativas y usa un umbral de lluvia (0.05 mm) para métricas de clasificación (precisión/recall/F1). Entrena con las filas hasta “ahora” y predice el horizonte futuro (próximas 24h o filas disponibles); calcula el MAE contra el forecast futuro.
 
 ## Roadmap
 - Implementar `/api/update` o eliminar el botón hasta que exista.

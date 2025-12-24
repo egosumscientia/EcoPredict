@@ -1,14 +1,39 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Body, HTTPException
+import time
 import requests
-import pandas as pd
 from services.weather_service import fetch_weather_data
 from services.model_service import train_and_predict
 
 router = APIRouter()
 
 geo_cache = {}
+predict_cache: dict = {}
+CACHE_TTL_SECONDS = 300  # 5 minutes
 
-def get_cached_coords(city_norm):
+
+def _cache_key(lat: float, lon: float, target: str):
+    # Redondea para evitar claves diferentes por ruido decimal
+    return (round(lat, 4), round(lon, 4), target)
+
+
+def _get_cached_prediction(lat: float, lon: float, target: str):
+    key = _cache_key(lat, lon, target)
+    entry = predict_cache.get(key)
+    now = time.time()
+    if not entry:
+        return None
+    if entry["expires_at"] < now:
+        predict_cache.pop(key, None)
+        return None
+    return entry["value"]
+
+
+def _set_cached_prediction(lat: float, lon: float, target: str, value: dict):
+    key = _cache_key(lat, lon, target)
+    predict_cache[key] = {"value": value, "expires_at": time.time() + CACHE_TTL_SECONDS}
+
+
+def get_cached_coords(city_norm: str):
     if city_norm in geo_cache:
         return geo_cache[city_norm]
 
@@ -28,7 +53,6 @@ def get_cached_coords(city_norm):
     return lat, lon, city
 
 
-# === ENDPOINT PRINCIPAL ===
 @router.get("/predict")
 async def predict(
     city: str = "",
@@ -37,15 +61,10 @@ async def predict(
     target: str = "temperature_2m"
 ):
     import unicodedata
-    import requests
-    import pandas as pd
-    from services.weather_service import fetch_weather_data
-    from services.model_service import train_and_predict
 
-    # === CASO 1: Nombre de ciudad ===
+    # Caso 1: nombre de ciudad
     if city:
         try:
-            # Normaliza (elimina tildes y espacios)
             city_norm = (
                 unicodedata.normalize("NFD", city)
                 .encode("ascii", "ignore")
@@ -53,27 +72,26 @@ async def predict(
                 .strip()
             )
 
-            # Usa el caché de geocodificación
             result = get_cached_coords(city_norm)
             if not result:
-                return {"error": f"La ciudad '{city}' no existe o está mal escrita."}
+                raise HTTPException(status_code=404, detail=f"La ciudad '{city}' no existe o esta mal escrita.")
 
             lat, lon, city = result
-            print(f"✅ Resolved city '{city}' -> ({lat}, {lon})")
+            print(f"? Resolved city '{city}' -> ({lat}, {lon})")
 
+        except HTTPException:
+            raise
         except Exception as e:
-            return {"error": f"No se pudo validar la ciudad '{city}'. Error: {e}"}
+            raise HTTPException(status_code=400, detail=f"No se pudo validar la ciudad '{city}'. Error: {e}")
 
-    # === CASO 2: Coordenadas ===
+    # Caso 2: coordenadas
     elif lat is not None and lon is not None:
         try:
-            # Corrige coordenadas invertidas o con signo incorrecto
             if abs(lat) > 90 and abs(lon) < 90:
                 lat, lon = lon, lat
             if lon > 0:
                 lon = -lon
 
-            # Reverse geocoding con fallback robusto
             geo_url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}"
             resp = requests.get(
                 geo_url,
@@ -95,26 +113,73 @@ async def predict(
                 city = f"Lat: {lat:.2f}, Lon: {lon:.2f}"
 
         except Exception as e:
-            print(f"⚠️ Error en reverse geocoding: {e}")
+            print(f"?? Error en reverse geocoding: {e}")
             city = f"Lat: {lat:.2f}, Lon: {lon:.2f}"
 
     else:
-        return {"error": "Debes ingresar una ciudad o coordenadas válidas."}
+        raise HTTPException(status_code=400, detail="Debes ingresar una ciudad o coordenadas validas.")
 
+    # Cache de prediccion
+    cached = _get_cached_prediction(lat, lon, target)
+    if cached:
+        return cached
 
-    # === Obtiene datos y predicciones ===
-    df = fetch_weather_data(lat, lon)
-    preds = train_and_predict(df, target=target)
+    # Obtiene datos y predicciones
+    try:
+        df = fetch_weather_data(lat, lon)
+    except requests.HTTPError as http_err:
+        status = http_err.response.status_code if http_err.response is not None else 502
+        raise HTTPException(status_code=status, detail="Error al obtener datos meteorologicos.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo obtener datos meteorologicos: {e}")
 
-    actual = df[target].tolist()
-    timestamps = df["time"].astype(str).tolist()[-len(preds):]
-    mae = abs(df[target] - pd.Series(preds)).mean()
+    result = train_and_predict(df, target=target)
 
-    return {
+    response = {
         "city": city,
         "target": target,
-        "predictions": preds,
-        "actual": actual,
-        "timestamps": timestamps,
-        "mae": mae,
+        "predictions": result.get("predictions", []),
+        "actual": result.get("actual", []),
+        "timestamps": result.get("timestamps", []),
+        "mae": result.get("mae"),
+        "rain_metrics": result.get("rain_metrics"),
+        "observed_past": result.get("observed_past", []),
+        "observed_timestamps": result.get("observed_timestamps", []),
     }
+
+    _set_cached_prediction(lat, lon, target, response)
+
+    return response
+
+
+@router.post("/update")
+async def update_model(payload: dict = Body(default={})):
+    """
+    Reentrena el modelo rapido usando coordenadas dadas (o Bogota por defecto).
+    Pensado para el boton "Update Model" del navbar.
+    """
+    lat = payload.get("lat", 4.61)
+    lon = payload.get("lon", -74.08)
+    target = payload.get("target", "temperature_2m")
+
+    try:
+        if lon > 0:
+            lon = -lon
+
+        df = fetch_weather_data(lat, lon)
+        train_and_predict(df, target=target, retrain=True)
+
+        return {
+            "status": "ok",
+            "message": f"Modelo actualizado para lat={lat}, lon={lon}, target={target}",
+        }
+    except requests.HTTPError as http_err:
+        status = http_err.response.status_code if http_err.response is not None else 502
+        raise HTTPException(
+            status_code=status,
+            detail="Error al obtener datos meteorologicos para actualizar el modelo.",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo actualizar el modelo: {e}")

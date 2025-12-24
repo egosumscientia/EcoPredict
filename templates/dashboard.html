@@ -10,7 +10,7 @@
 
     <!-- FORM -->
     <form id="predictForm" class="flex flex-wrap justify-center gap-3 mb-4">
-        <input id="city" type="text" placeholder="City (optional)" 
+        <input id="city" type="text" placeholder="City (optional)"
             class="px-3 py-1 rounded bg-gray-800 text-white w-48 text-sm"
             aria-label="Enter city name">
 
@@ -21,7 +21,7 @@
 
         <select id="variable" class="px-3 py-1 rounded bg-gray-800 text-white text-sm"
                 aria-label="Select variable">
-            <option value="temperature_2m">Temperature (°C)</option>
+            <option value="temperature_2m">Temperature (C)</option>
             <option value="relative_humidity_2m">Humidity (%)</option>
             <option value="pressure_msl">Pressure (hPa)</option>
             <option value="precipitation">Precipitation (mm)</option>
@@ -34,23 +34,54 @@
         </button>
     </form>
 
-    <!-- 🧱 Error visible -->
+    <!-- Error visible -->
     <div id="errorBox"
          class="hidden text-red-400 bg-red-950/30 border border-red-500/40 rounded-lg px-4 py-2 mb-6 text-sm text-center"></div>
 
-    <!-- CHART -->
-    <div id="chart-container" class="flex justify-center mt-6">
-        <canvas id="chart" class="max-w-full" style="width: 90%; height: 360px;"></canvas>
+    <!-- Test MAE -->
+    <div id="metricBox"
+         class="hidden text-emerald-300 bg-emerald-900/20 border border-emerald-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
+        Test MAE: <span id="maeValue">-</span>
+    </div>
+
+    <!-- Rain metrics -->
+    <div id="rainMetricBox"
+         class="hidden text-cyan-300 bg-cyan-900/20 border border-cyan-500/40 rounded-lg px-4 py-2 mb-4 text-sm text-center">
+        Rain P/R/F1 (th <span id="rainTh">-</span> mm):
+        <span id="rainPr">-</span> /
+        <span id="rainRe">-</span> /
+        <span id="rainF1">-</span>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="flex justify-center mt-6">
+        <h3 class="text-gray-300 text-sm">Próximas 24h: Predicción vs Forecast (UTC)</h3>
+    </div>
+    <div id="chart-container" class="flex justify-center mt-2">
+        <canvas id="chartFuture" class="max-w-full" style="width: 90%; height: 360px;"></canvas>
+    </div>
+    <div class="flex justify-center mt-6">
+        <h3 class="text-gray-300 text-sm">Últimas 24h observadas (UTC)</h3>
+    </div>
+    <div id="chart-past-container" class="flex justify-center mt-2">
+        <canvas id="chartPast" class="max-w-full" style="width: 90%; height: 260px;"></canvas>
     </div>
 </div>
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// === ⚙️ Evitar mezcla de ciudad y coordenadas ===
+// Evitar mezcla de ciudad y coordenadas
 const cityInput = document.getElementById('city');
 const latInput = document.getElementById('lat');
 const lonInput = document.getElementById('lon');
+const metricBox = document.getElementById('metricBox');
+const maeValue = document.getElementById('maeValue');
+const rainMetricBox = document.getElementById('rainMetricBox');
+const rainTh = document.getElementById('rainTh');
+const rainPr = document.getElementById('rainPr');
+const rainRe = document.getElementById('rainRe');
+const rainF1 = document.getElementById('rainF1');
 
 function clearCoordsIfCity() {
     if (cityInput.value.trim() !== '') {
@@ -77,7 +108,7 @@ cityInput.addEventListener('input', clearCoordsIfCity);
 latInput.addEventListener('input', clearCityIfCoords);
 lonInput.addEventListener('input', clearCityIfCoords);
 
-// === 📊 Lógica de predicción ===
+// Logica de prediccion
 document.getElementById('predictForm').addEventListener('submit', async e => {
     e.preventDefault();
 
@@ -90,6 +121,8 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
     // Limpiar errores previos
     errorBox.classList.add('hidden');
     errorBox.textContent = '';
+    metricBox.classList.add('hidden');
+    rainMetricBox.classList.add('hidden');
 
     const params = new URLSearchParams({ target: variable });
     if (city) params.set('city', city);
@@ -99,13 +132,12 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
     }
 
     const url = `/api/predict?${params.toString()}`;
-    console.log("🔍 Request:", url);
+    console.log("Request:", url);
 
     try {
         const res = await fetch(url);
         const data = await res.json();
 
-        // --- 🚨 Mostrar errores visualmente ---
         if (!res.ok || data.error) {
             errorBox.textContent = data.error || "Error al obtener datos del servidor.";
             errorBox.classList.remove('hidden');
@@ -118,29 +150,61 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
             return;
         }
 
-        // Destruye gráfico anterior
-        if (window.chartInstance) window.chartInstance.destroy();
+        // Mostrar MAE de test si existe
+        if (typeof data.mae === 'number') {
+            maeValue.textContent = data.mae.toFixed(3);
+            metricBox.classList.remove('hidden');
+        }
 
-        const ctx = document.getElementById('chart');
-        window.chartInstance = new Chart(ctx, {
+        // Mostrar metricas de lluvia si existen
+        if (data.rain_metrics) {
+            const { threshold, precision, recall, f1 } = data.rain_metrics;
+            rainTh.textContent = (threshold ?? 0).toFixed(3);
+            rainPr.textContent = (precision ?? 0).toFixed(3);
+            rainRe.textContent = (recall ?? 0).toFixed(3);
+            rainF1.textContent = (f1 ?? 0).toFixed(3);
+            rainMetricBox.classList.remove('hidden');
+        }
+
+        const pastLabels = data.observed_timestamps || [];
+        const pastData = data.observed_past || [];
+        const futureLabelsRaw = data.timestamps || [];
+        const futureLabels = futureLabelsRaw.map(ts => `${ts} UTC`);
+        const futureActual = data.actual || [];
+        const preds = data.predictions || [];
+        const forecastBaselineSeries = futureActual;
+        const predSeries = preds;
+
+        // Destruye graficos anteriores
+        if (window.chartFuture && typeof window.chartFuture.destroy === 'function') {
+            window.chartFuture.destroy();
+        }
+        if (window.chartPast && typeof window.chartPast.destroy === 'function') {
+            window.chartPast.destroy();
+        }
+
+        // Future chart: prediction vs forecast baseline
+        const ctxFuture = document.getElementById('chartFuture');
+        window.chartFuture = new Chart(ctxFuture, {
             type: 'line',
             data: {
-                labels: data.timestamps.slice(-data.predictions.length),
+                labels: futureLabels,
                 datasets: [
                     {
                         label: `Predicted ${variable} (${data.city})`,
-                        data: data.predictions,
+                        data: predSeries,
                         borderColor: '#06b6d4',
                         backgroundColor: 'rgba(6,182,212,0.25)',
                         tension: 0.3,
                     },
                     {
-                        label: `Actual ${variable} (${data.city})`,
-                        data: data.actual.slice(-data.predictions.length),
+                        label: `Forecast baseline ${variable} (${data.city})`,
+                        data: forecastBaselineSeries,
                         borderColor: '#10b981',
                         backgroundColor: 'rgba(16,185,129,0.25)',
-                        borderDash: [5,5],
+                        borderDash: [6,2],
                         tension: 0.3,
+                        spanGaps: false,
                     }
                 ]
             },
@@ -158,7 +222,13 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
                 },
                 scales: {
                     x: {
-                        ticks: { color: '#aaa', maxRotation: 45, minRotation: 45 },
+                        ticks: {
+                            color: '#aaa',
+                            maxRotation: 45,
+                            minRotation: 45,
+                            maxTicksLimit: 8,
+                            autoSkip: true,
+                        },
                         title: { display: true, text: 'Time (UTC)', color: '#aaa' }
                     },
                     y: {
@@ -168,10 +238,62 @@ document.getElementById('predictForm').addEventListener('submit', async e => {
                 }
             }
         });
+
+        // Past observed chart
+        if (pastLabels.length && pastData.length) {
+            document.getElementById('chart-past-container').classList.remove('hidden');
+            const ctxPast = document.getElementById('chartPast');
+            window.chartPast = new Chart(ctxPast, {
+                type: 'line',
+                data: {
+                    labels: pastLabels.map(ts => `${ts} UTC`),
+                    datasets: [
+                        {
+                            label: `Observed ${variable} (${data.city})`,
+                            data: pastData,
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251,191,36,0.25)',
+                            tension: 0.3,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e5e5e5', boxWidth: 15 }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#aaa',
+                                maxRotation: 45,
+                                minRotation: 45,
+                                maxTicksLimit: 8,
+                                autoSkip: true,
+                            },
+                            title: { display: true, text: 'Time (UTC)', color: '#aaa' }
+                        },
+                        y: {
+                            ticks: { color: '#aaa' },
+                            title: { display: true, text: variable, color: '#aaa' }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('chart-past-container').classList.add('hidden');
+        }
     } catch (err) {
-        errorBox.textContent = "Error de conexión con el servidor.";
+        errorBox.textContent = "Error de conexion con el servidor.";
         errorBox.classList.remove('hidden');
-        console.error("❌ Error:", err);
+        console.error("Error:", err);
     }
 });
 </script>
