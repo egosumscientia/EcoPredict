@@ -1,51 +1,91 @@
 # AI-EcoPredict
 
-Dashboard y API ligera con FastAPI que descarga datos horarios de Open-Meteo, entrena un modelo sencillo (Linear Regression + Random Forest) “en caliente” y grafica predicciones vs valores reales con Chart.js.
+AI-EcoPredict es una **API y dashboard de predicción climática a corto plazo (~24 h)** que utiliza
+machine learning clásico entrenado *on-demand* sobre datos horarios públicos de Open-Meteo.
+
+El sistema compara explícitamente la predicción ML contra el **forecast numérico base**, mostrando
+métricas cuantitativas visibles para cada ubicación y variable.
+
+---
+
+## Alcance y objetivo
+
+- Predicción local por ciudad o coordenadas.
+- Horizonte corto (próximas ~24 h).
+- Evaluar si modelos simples con features de rezago pueden **ajustar o suavizar** el forecast base.
+- Proyecto orientado a **demo técnica / MVP de portafolio**, no a operación productiva.
+
+---
+
+## Stack técnico
+
+- **Backend / API**: FastAPI + Uvicorn  
+- **ML**: scikit-learn (Linear Regression + Random Forest)  
+- **Datos**: Open-Meteo (archive + forecast), Nominatim (geocoding)  
+- **Frontend**: Tailwind CSS (precompilado) + Chart.js (CDN)  
+- **Estado**: stateless, caché en memoria (TTL 5 min)
+
+---
 
 ## Características
-- Sin base de datos: stateless, caché en memoria (5 min por lat/lon/variable) para `/api/predict`.
-- Datos: últimas 24h observadas/reanálisis (archive) + forecast futuro de Open-Meteo.
-- Modelo: mezcla LR (escalada) + RandomForest con features de rezago según variable; precipitación usa log1p y métricas de lluvia (precisión/recall/F1).
-- Robustez básica: timeouts y reintentos con backoff a Open-Meteo/Nominatim; errores claros en la UI.
-- Frontend: Tailwind CSS compilado + Chart.js (CDN); dashboard muestra MAE de test y métricas de lluvia cuando aplica.
 
-## Estructura
-- `main.py`: monta estáticos/plantillas y registra routers.
-- `routers/dashboard.py`: ruta `/` (dashboard).
-- `routers/api.py`: `GET /api/predict` (geocoding + predicción) y `POST /api/update` (reentrenar rápido).
-- `services/weather_service.py`: descarga y combina archivo + forecast (con reintentos).
-- `services/model_service.py`: entrenamiento/predicción y métricas.
-- `templates/` y `static/`: HTML base + dashboard, CSS compilado y favicon.
+- **Sin base de datos**  
+  Arquitectura stateless con caché en memoria por `(lat, lon, variable)` para `/api/predict`.
 
-## Ejecutar local
+- **Datos climáticos**
+  - Últimas 24 h observadas / reanálisis (archive).
+  - Forecast futuro horario de Open-Meteo.
+
+- **Modelado**
+  - Mezcla de Linear Regression (escalada) + Random Forest.
+  - Features de rezago específicos por variable.
+  - Precipitación: transformación `log1p` + métricas de clasificación (precision / recall / F1).
+
+- **Evaluación**
+  - MAE calculado sobre ventana futura inmediata.
+  - Métricas de lluvia solo cuando el target es precipitación.
+
+- **Robustez básica**
+  - Timeouts y reintentos con *exponential backoff* a Open-Meteo y Nominatim.
+  - Manejo explícito de errores hacia la UI.
+
+- **Visualización**
+  - Predicción ML vs forecast baseline.
+  - Últimas 24 h observadas en tiempo local.
+  - Métricas visibles en el dashboard.
+
+---
+
+## Estructura del proyecto
+
+- `main.py`  
+  Inicialización de FastAPI, estáticos, plantillas y routers.
+
+- `routers/dashboard.py`  
+  Ruta `/` para el dashboard.
+
+- `routers/api.py`  
+  - `GET /api/predict`: geocoding, descarga de datos, entrenamiento y predicción.  
+  - `POST /api/update`: reentrenamiento rápido on-demand.
+
+- `services/weather_service.py`  
+  Descarga y combinación de datos archive + forecast con reintentos.
+
+- `services/model_service.py`  
+  Feature engineering, entrenamiento, predicción y métricas.
+
+- `templates/` / `static/`  
+  HTML base, dashboard, CSS compilado y recursos estáticos.
+
+---
+
+## Ejecución local
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 python server.py
-```
-App en `http://127.0.0.1:8000/`.
 
-## API
-`GET /api/predict`
-- Params: `city` (opcional), `lat`, `lon` (opcionales), `target` en `{temperature_2m, relative_humidity_2m, pressure_msl, precipitation, wind_speed_10m}` (default `temperature_2m`).
-- Devuelve: `city`, `target`, `predictions`, `actual` (forecast baseline), `timestamps`, `mae` (ventana de test futuro), `rain_metrics` (si target es precipitación), `observed_past` + `observed_timestamps` (últimas 24h).
-
-`POST /api/update`
-- Body: `{"lat": 4.61, "lon": -74.08, "target": "temperature_2m"}`
-- Reentrena rápido y responde `{"status": "ok", ...}` o error HTTP.
-
-## Dashboard
-- Formulario para ciudad o coordenadas, selector de variable y botón Predict.
-- Muestra MAE de test con etiqueta clara y, si corresponde, métricas de lluvia.
-- Gráficos: próximas ~24h (predicción vs forecast baseline) y últimas 24h observadas.
-- Manejo de errores visible: si la API falla o devuelve datos incompletos, se muestra mensaje en la UI.
-
-## Notas
-- Sin almacenamiento persistente; pensado como demo/MVP y pieza de portafolio.
-- Revisa términos de Open-Meteo y Nominatim para uso público/comercial. Añade LICENSE (p.ej. MIT) si publicas el repo.
-
-## Roadmap corto
-- Caché persistente (Redis) y fallback de proveedor.
-- Backtesting y reporte de métricas por ciudad/variable.
-- Dockerfile/compose y CI básica (lint + tests).
+Aplicación disponible en:
+http://127.0.0.1:8000/
